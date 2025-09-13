@@ -1,30 +1,58 @@
 # Файл docker-compose.yml
-version: 2.39.1
+version: '2.4' # Указание версии 2.4 (можно и 3.x, но синтаксис volumes останется)
+
 # Перечень volume
 volumes:
   pg_data:
+  static:
 
-# Перечень контейнеров
+    # Явно объявляем сеть
+networks:
+  django-network:
+    driver: bridge # Драйвер bridge - стандартный для коммуникации между контейнерами
+
 services:
-  # Имя и описание первого контейнера; имя выбирает разработчик. 
-  # Это контейнер БД
   db:
-    # Из какого образа запустить контейнер:
     image: postgres:13.10
-    # Файл (или список файлов) с переменными окружения
     env_file: .env
-    # Какой volume подключить для этого контейнера
     volumes:
       - pg_data:/var/lib/postgresql/data
-  # Имя и описание контейнера с бэкендом
+    networks:
+      # Подключаем сервис к сети
+      - django-network
+
   backend:
-    # Из какого Dockerfile собирать образ для этого контейнера:
     build: ./backend/
     env_file: .env
-    # Какие контейнеры нужно запустить до старта этого контейнера:
+    # Тут подключаем volume к backend
+    volumes:
+      - static:/backend_static
     depends_on:
       - db
-  # Имя третьего контейнера. Это контейнер с фронтендом
+    networks:
+      # Подключаем сервис к сети
+      - django-network
+
   frontend:
     env_file: .env
     build: ./frontend/
+    volumes:
+      - static:/frontend_static
+    command: cp -r /app/build/. /frontend_static/
+    networks:
+      # Подключаем сервис к сети
+      - django-network
+
+  gateway:
+    build: ./gateway/
+    # А тут подключаем volume со статикой к gateway
+    volumes:
+      - static:/staticfiles
+    ports:
+      - 8000:80
+    depends_on:
+      # Говорим Compose, что gateway зависит от backend
+      - backend
+    networks:
+      # Подключаем сервис к сети. Это ключевое исправление!
+      - django-network
